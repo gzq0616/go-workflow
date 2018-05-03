@@ -11,8 +11,15 @@ const (
 )
 
 const (
-	AutoTrigger    = iota // 自动执行
+	StartNode      = iota // 开始节点
+	EndNode               // 终止节点
+	AutoTrigger           // 自动执行
 	ManualTrigger         // 人工执行
 	MessageTrigger        // 消息
 	TimingTrigger         // 定时执行
+)
+
+const (
+	StartNodeName = "start"
+	EndNodeName   = "end"
 )

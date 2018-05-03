@@ -9,3 +9,11 @@ func TestNewWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestStartTaskWorkflow(t *testing.T) {
+	TestInitWorkflow(t)
+	err := StartTaskWorkflow(1, "nginx_workflow")
+	if err != nil {
+		t.Fatal(err)
+	}
+}

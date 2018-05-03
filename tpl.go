@@ -2,6 +2,8 @@ package go_workflow
 
 import (
 	"time"
+	"errors"
+	"fmt"
 )
 
 type TplAction struct {
@@ -9,11 +11,6 @@ type TplAction struct {
 	Name      string    `json:"name" xorm:"varchar(100) notnull"`
 	CreatedAt time.Time `json:"created_at" xorm:"created"`
 	UpdatedAt time.Time `json:"updated_at" xorm:"updated"`
-}
-
-func (self *TplAction) Add() (*TplAction, error) {
-	_, err := xe.Insert(self)
-	return self, err
 }
 
 type TplVariable struct {
@@ -26,11 +23,6 @@ type TplVariable struct {
 	UpdatedAt time.Time `json:"updated_at" xorm:"updated"`
 }
 
-func (self *TplVariable) Add() (*TplVariable, error) {
-	_, err := xe.Insert(self)
-	return self, err
-}
-
 // 工作流
 type TplWorkflow struct {
 	Id        int       `json:"id" xorm:"pk autoincr"`
@@ -38,11 +30,6 @@ type TplWorkflow struct {
 	Alias     string    `json:"alias"`                           // 流程别名或者中文名称
 	CreatedAt time.Time `json:"created_at" xorm:"created"`
 	UpdatedAt time.Time `json:"updated_at" xorm:"updated"`
-}
-
-func (self *TplWorkflow) Add() (*TplWorkflow, error) {
-	_, err := xe.Insert(self)
-	return self, err
 }
 
 // 节点 A,B,C,D
@@ -60,49 +47,102 @@ type TplNode struct {
 	UpdatedAt    time.Time `json:"updated_at" xorm:"updated"`
 }
 
-func (self *TplNode) Add() (*TplNode, error) {
-	_, err := xe.Insert(self)
-	return self, err
-}
-
 // 节点与节点的关系
 type TplTransition struct {
 	Id           int       `json:"id" xorm:"pk autoincr"`
-	WorkflowId   int       `json:"workflow_id" xorm:"notnull"`
-	SourceNodeId int       `json:"source_node_id" xorm:"notnull"` // 源节点
-	TargetNodeId int       `json:"target_node" xorm:"notnull"`    // 目标节点
-	Condition    string    `json:"condition" xorm:"default('1')"` // (执行条件 ( { value1 } > 88 and { value2 } != true )
+	WorkflowId   int       `json:"workflow_id" xorm:"unique(WorkflowId,source_node_id,target_node_id) notnull"`
+	SourceNodeId int       `json:"source_node_id" xorm:"unique(WorkflowId,source_node_id,target_node_id) notnull"` // 源节点
+	TargetNodeId int       `json:"target_node_id" xorm:"unique(WorkflowId,source_node_id,target_node_id) notnull"` // 目标节点
+	Condition    string    `json:"condition" xorm:"default('1')"`                                                  // (执行条件 ( { value1 } > 88 and { value2 } != true )
 	CreatedAt    time.Time `json:"created_at" xorm:"created"`
 	UpdatedAt    time.Time `json:"updated_at" xorm:"updated"`
 }
 
-func (self *TplTransition) Add() (*TplTransition, error) {
-	_, err := xe.Insert(self)
-	return self, err
+func AddAction(name string) (*TplAction, error) {
+	action := &TplAction{Name: name}
+	_, err := xe.Insert(action)
+	if err != nil {
+		return nil, err
+	}
+	return action, nil
 }
 
-func NewAction(name string) *TplAction {
-	return &TplAction{Name: name}
-}
+func AddTplVariable(varName, varType, varDesc string, actionId int) (*TplVariable, error) {
+	has, err := xe.Exist(&TplAction{Id: actionId})
+	if err != nil {
+		return nil, err
+	}
+	if !has {
+		return nil, errors.New(fmt.Sprintf("action not exsit,actionId:%d", actionId))
+	}
 
-func NewTplVariable(varName, varType, varDesc string, actionId int) *TplVariable {
-	return &TplVariable{
+	tplVariable := &TplVariable{
 		Name:     varName,
 		ActionId: actionId,
 		Type:     varType,
 		Describe: varDesc,
 	}
+
+	_, err = xe.Insert(tplVariable)
+	if err != nil {
+		return nil, err
+	}
+	return tplVariable, nil
 }
 
-func NewTplWorkflow(name, alias string) *TplWorkflow {
-	return &TplWorkflow{
+func AddTplWorkflow(name, alias string) (*TplWorkflow, *TplNode, *TplNode, error) {
+	tplWorkflow := &TplWorkflow{
 		Name:  name,
 		Alias: alias,
 	}
+	_, err := xe.Insert(tplWorkflow)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	startNode := &TplNode{
+		Name:       StartNodeName,
+		Alias:      "开始",
+		WorkflowId: tplWorkflow.Id,
+		NodeType:   StartNode,
+	}
+	_, err = xe.Insert(startNode)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	endNode := &TplNode{
+		Name:       EndNodeName,
+		Alias:      "结束",
+		WorkflowId: tplWorkflow.Id,
+		NodeType:   EndNode,
+	}
+	_, err = xe.Insert(endNode)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	return tplWorkflow, startNode, endNode, nil
 }
 
-func NewTplNode(name, alias, preCondition string, workflowId, actionId, nodeType int, x, y float64) *TplNode {
-	return &TplNode{
+func AddTplNode(name, alias, preCondition string, workflowId, actionId, nodeType int, x, y float64) (*TplNode, error) {
+	has, err := xe.Exist(&TplAction{Id: actionId})
+	if err != nil {
+		return nil, err
+	}
+	if !has {
+		return nil, errors.New(fmt.Sprintf("action not exsit,actionId:%d", actionId))
+	}
+
+	has, err = xe.Exist(&TplWorkflow{Id: workflowId})
+	if err != nil {
+		return nil, err
+	}
+	if !has {
+		return nil, errors.New(fmt.Sprintf("workflow not exsit,workflowId:%d", workflowId))
+	}
+
+	tplNode := &TplNode{
 		Name:         name,
 		Alias:        alias,
 		WorkflowId:   workflowId,
@@ -112,8 +152,45 @@ func NewTplNode(name, alias, preCondition string, workflowId, actionId, nodeType
 		X:            x,
 		Y:            y,
 	}
+
+	_, err = xe.Insert(tplNode)
+	if err != nil {
+		return nil, err
+	}
+	return tplNode, nil
 }
 
-func NewTplTransition(sourceId, targetId, workflowId int, condition string) *TplTransition {
-	return &TplTransition{SourceNodeId: sourceId, TargetNodeId: targetId, Condition: condition, WorkflowId: workflowId}
+func AddTplTransition(sourceId, targetId, workflowId int, condition string) (*TplTransition, error) {
+	// 校验是否存在
+	sourceNode := &TplNode{Id: sourceId}
+	has, err := xe.Get(sourceNode)
+	if err != nil {
+		return nil, err
+	}
+	if !has {
+		return nil, errors.New(fmt.Sprintf("not found this template node by source id :%d", sourceId))
+	}
+
+	has, err = xe.Exist(&TplNode{Id: targetId})
+	if err != nil {
+		return nil, err
+	}
+	if !has {
+		return nil, errors.New(fmt.Sprintf("not found this template node by target id :%d", targetId))
+	}
+	tplTran := &TplTransition{SourceNodeId: sourceId, TargetNodeId: targetId, WorkflowId: workflowId}
+
+	// 开始节点的条件强制设为1,即直接跳转到下一个节点
+	if sourceNode.NodeType == StartNode {
+		tplTran.Condition = "1"
+	} else {
+		tplTran.Condition = condition
+	}
+
+	_, err = xe.Insert(tplTran)
+	if err != nil {
+		return nil, err
+	}
+
+	return tplTran, nil
 }
