@@ -53,7 +53,7 @@ type TplTransition struct {
 	WorkflowId   int       `json:"workflow_id" xorm:"unique(WorkflowId,source_node_id,target_node_id) notnull"`
 	SourceNodeId int       `json:"source_node_id" xorm:"unique(WorkflowId,source_node_id,target_node_id) notnull"` // 源节点
 	TargetNodeId int       `json:"target_node_id" xorm:"unique(WorkflowId,source_node_id,target_node_id) notnull"` // 目标节点
-	Condition    string    `json:"condition" xorm:"default('1')"`                                                  // (执行条件 ( { value1 } > 88 and { value2 } != true )
+	Condition    string    `json:"condition"`                                                                      // (执行条件 ( { value1 } > 88 and { value2 } != true )
 	CreatedAt    time.Time `json:"created_at" xorm:"created"`
 	UpdatedAt    time.Time `json:"updated_at" xorm:"updated"`
 }
@@ -180,9 +180,9 @@ func AddTplTransition(sourceId, targetId, workflowId int, condition string) (*Tp
 	}
 	tplTran := &TplTransition{SourceNodeId: sourceId, TargetNodeId: targetId, WorkflowId: workflowId}
 
-	// 开始节点的条件强制设为1,即直接跳转到下一个节点
+	// 开始节点的条件强制设为空,即无条件直接跳转到下一个节点
 	if sourceNode.NodeType == StartNode {
-		tplTran.Condition = "1"
+		tplTran.Condition = ""
 	} else {
 		tplTran.Condition = condition
 	}

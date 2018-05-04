@@ -1,62 +1,47 @@
 package go_workflow
 
 import (
-	"errors"
-	"fmt"
 	"time"
+	"fmt"
 	"github.com/go-xorm/xorm"
+	"errors"
 )
 
-type TaskVariable struct {
-	Id         int       `json:"id" xorm:"pk autoincr"`
-	Name       string    `json:"name" xorm:"varchar(100) unique(name,node_id,action_id) notnull"` // 定义变量名称
-	WorkflowId int       `json:"workflow_id" xorm:"notnull"`                                      // 所属流程
-	NodeId     int       `json:"node_id" xorm:"unique(name,node_id,action_id) notnull"`           // 所属node
-	ActionId   int       `json:"action_id" xorm:"unique(name,node_id,action_id) notnull"`         // 变量所属action
-	Type       string    `json:"type" xorm:"varchar(100) notnull"`                                // 变量类型 int,string,time,bool
-	Describe   string    `json:"describe" xorm:"text"`                                            // 变量描述
-	Value      string    `json:"value"`                                                           // 变量实际值，存入数据库转为string类型
-	CreatedAt  time.Time `json:"created_at" xorm:"created"`
-	UpdatedAt  time.Time `json:"updated_at" xorm:"updated"`
-}
-
-// 节点与节点的关系
-type TaskTransition struct {
-	Id           int       `json:"id" xorm:"pk autoincr"`
-	WorkflowId   int       `json:"workflow_id" xorm:"unique(WorkflowId,source_node_id,target_node_id) notnull"`
-	SourceNodeId int       `json:"source_node_id" xorm:"unique(WorkflowId,source_node_id,target_node_id) notnull"` // 源节点
-	TargetNodeId int       `json:"target_node_id" xorm:"unique(WorkflowId,source_node_id,target_node_id) notnull"` // 目标节点
-	Condition    string    `json:"condition" xorm:"default('1')"`                                                  // (执行条件 ( { value1 } > 88 and { value2 } != true )
-	CreatedAt    time.Time `json:"created_at" xorm:"created"`
-	UpdatedAt    time.Time `json:"updated_at" xorm:"updated"`
-}
-
 type TaskWorkflow struct {
-	Id        int       `json:"id" xorm:"pk autoincr"`
-	TaskId    int       `json:"task_id" xorm:"unique(task_id,name) notnull"`           // task
-	Name      string    `json:"name" xorm:"unique(task_id,name) varchar(100) notnull"` // 流程名称,最好用字母
-	Alias     string    `json:"alias"`                                                 // 流程别名或者中文名称
-	Status    int       `json:"status"`                                                // 流程状态
-	CreatedAt time.Time `json:"created_at" xorm:"created"`
-	UpdatedAt time.Time `json:"updated_at" xorm:"updated"`
+	Id          int                    `json:"id" xorm:"pk autoincr"`
+	TaskId      int                    `json:"task_id" xorm:"unique(task_id,name) notnull"`           // task
+	Name        string                 `json:"name" xorm:"unique(task_id,name) varchar(100) notnull"` // 流程名称,最好用字母
+	Alias       string                 `json:"alias"`                                                 // 流程别名或者中文名称
+	Status      int                    `json:"status"`                                                // 流程状态
+	sign        chan string            `json:"-" xorm:"-"`                                            // 信号
+	Result      map[string]bool        `json:"-" xorm:"json"`                                         // 存储节点完成状态,key为节点的名称
+	nodeChannel map[string]chan string `json:"-" xorm:"-"`                                            // 节点注册的channel,key为节点的名称
+	CreatedAt   time.Time              `json:"created_at" xorm:"created"`
+	UpdatedAt   time.Time              `json:"updated_at" xorm:"updated"`
 }
 
-type TaskNode struct {
-	Id           int       `json:"id" xorm:"pk autoincr"`
-	Name         string    `json:"name" xorm:"unique(name,workflow_id)"`        // 节点名称
-	Alias        string    `json:"alias"`                                       // Node中文名称
-	WorkflowId   int       `json:"workflow_id" xorm:"unique(name,workflow_id)"` // Node属于哪个工作流
-	ActionId     int       `json:"action_id" xorm:"notnull"`                    // 调用的action
-	Status       int       `json:"status" xorm:"notnull"`                       // 状态
-	NodeType     int       `json:"node_type" xorm:"notnull"`                    // Node类型
-	PreCondition string    `json:"pre_condition"`                               // 前置条件
-	X            float64   `json:"x"`                                           // 坐标x
-	Y            float64   `json:"y"`                                           // 坐标y
-	CreatedAt    time.Time `json:"created_at" xorm:"created"`
-	UpdatedAt    time.Time `json:"updated_at" xorm:"updated"`
+// workflow发布订阅消息
+func (self *TaskWorkflow) register(nodeName string) {
+	self.nodeChannel[nodeName] = make(chan string, 1)
 }
 
-func NewWorkflow(taskId int, tplWorkflowId int) error {
+func (self *TaskWorkflow) notify() {
+	for self.Status == RunningState {
+		signal := <-self.sign
+		for _, channel := range self.nodeChannel {
+			channel <- signal
+		}
+	}
+}
+
+func (self *TaskWorkflow) cancel(nodeName string) {
+	channel := self.nodeChannel[nodeName]
+	delete(self.nodeChannel, nodeName)
+	close(channel)
+}
+
+// 根据流程模板新建工作流
+func NewFlowDiagram(taskId int, tplWorkflowId int) error {
 	session := xe.NewSession()
 	defer session.Close()
 	// begin transaction
@@ -196,18 +181,33 @@ func NewWorkflow(taskId int, tplWorkflowId int) error {
 }
 
 func StartTaskWorkflow(taskId int, workflowName string) error {
+	// 根据taskId和workflowName查询TaskWorkflow
 	workflow := &TaskWorkflow{TaskId: taskId, Name: workflowName}
 	_, err := xe.Get(workflow)
 	if err != nil {
 		return err
 	}
+	return startTaskWorkflow(workflow)
+}
 
-	session := xe.NewSession()
-	err = session.Begin()
+func CloseTaskWorkflow(taskId int, workflowName string) error {
+	// 根据taskId和workflowName查询TaskWorkflow
+	workflow := &TaskWorkflow{TaskId: taskId, Name: workflowName}
+	_, err := xe.Get(workflow)
 	if err != nil {
 		return err
 	}
-	// 重置状态
+	return closeTaskWorkflow(workflow)
+}
+
+func startTaskWorkflow(workflow *TaskWorkflow) error {
+	session := xe.NewSession()
+	err := session.Begin()
+	if err != nil {
+		return err
+	}
+
+	// 重置整个流程状态为初始值
 	err = resetWorkflow(workflow, session)
 	if err != nil {
 		session.Rollback()
@@ -221,24 +221,26 @@ func StartTaskWorkflow(taskId int, workflowName string) error {
 		return err
 	}
 
-	// 寻找入口start node
+	// 寻找流程入口node节点
 	startTaskNode := &TaskNode{WorkflowId: workflow.Id, Name: StartNodeName, NodeType: StartNode}
 	_, err = session.Get(startTaskNode)
 	if err != nil {
 		session.Rollback()
 		return err
 	}
-
-	// 将入口Node加入队列处理
-
-	//// 根据开始节点激活下一个节点
-	//err = activateNextNode(startTaskNode, workflow, session)
-	//if err != nil {
-	//	session.Rollback()
-	//	return err
-	//}
-
 	session.Commit()
+
+	workflow.sign = make(chan string)
+	//workflow.Result = make(map[string]bool) 可能不需要初始化,数据库查询出来应该已经初始化过了
+	workflow.nodeChannel = make(map[string]chan string)
+	workflow.notify()
+	// 将入口Node加入队列处理
+	//activateNextNode(startTaskNode, q)
+	return nil
+}
+
+func closeTaskWorkflow(workflow *TaskWorkflow) error {
+	// todo:  关闭工作流
 	return nil
 }
 
@@ -253,24 +255,6 @@ func resetWorkflow(workflow *TaskWorkflow, session *xorm.Session) error {
 	_, err = session.Table(new(TaskVariable)).Cols("value").Where("workflow_id=? AND value!=?", workflow.Id, "").Update(map[string]string{"value": ""})
 	if err != nil {
 		return err
-	}
-	return nil
-}
-
-func activateNextNode(startNode *TaskNode, workflow *TaskWorkflow, session *xorm.Session) error {
-	nextNodes := make([]*TaskTransition, 0)
-	err := session.Where("workflow_id = ? AND source_node_id = ?", workflow.Id, startNode.Id).Find(&nextNodes)
-	if err != nil {
-		return err
-	}
-
-	for _, target := range nextNodes {
-		// 激活节点
-		node := &TaskNode{Id: target.TargetNodeId, Status: ActivatedState}
-		_, err = session.ID(target.TargetNodeId).Cols("status").Update(node)
-		if err != nil {
-			return err
-		}
 	}
 	return nil
 }

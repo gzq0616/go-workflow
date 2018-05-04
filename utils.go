@@ -1,22 +1,25 @@
 package go_workflow
 
 import (
-	"strings"
-	"fmt"
+	"encoding/hex"
+	"crypto/md5"
 )
 
-// 条件表达式解析
-// ( { value1 } > 88 and { value2 } != true ) && { value3 } == "ok"
-
-func parse(condition string) (bool, error) {
-	condis := strings.Split(condition, " ")
-	fmt.Println(condis)
-	fmt.Println(condis[2])
-	return false, nil
+func md5Sum(str string) string {
+	hash := md5.New()
+	hash.Write([]byte(str))
+	cipherStr := hash.Sum(nil)
+	return hex.EncodeToString(cipherStr)
 }
 
-func (self *TaskTransition) Parse() (bool, error) {
-	cds := strings.Split(self.Condition, " ")
-	fmt.Println(cds)
-	return false, nil
+func listRemove(list []string, item string) []string {
+	var ret []string
+	for index, value := range list {
+		if value == item {
+			end := index + 1
+			ret = append(ret, list[:index]...)
+			ret = append(ret, list[end:]...)
+		}
+	}
+	return ret
 }
