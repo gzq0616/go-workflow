@@ -11,8 +11,9 @@ var (
 )
 
 type Engine struct {
-	status    int
-	workflows map[string]*TaskWorkflow
+	status     int
+	startQueue chan *TaskWorkflow
+	stopQueue  chan *TaskWorkflow
 }
 
 func InitWorkflow(e *xorm.Engine) error {
@@ -21,7 +22,9 @@ func InitWorkflow(e *xorm.Engine) error {
 	once.Do(func() {
 		xe = e
 		engine = &Engine{
-			status: UndoState,
+			status:     UndoState,
+			startQueue: make(chan *TaskWorkflow, 1),
+			stopQueue:  make(chan *TaskWorkflow, 1),
 		}
 		xe.ShowSQL(true)
 		err = xe.Sync2(new(TplAction), new(TplVariable), new(TplTransition), new(TplWorkflow), new(TplNode),
@@ -30,13 +33,10 @@ func InitWorkflow(e *xorm.Engine) error {
 	return err
 }
 
-func Start() error {
-	// todo:启动流程引擎
+func Start() {
 	if engine.status != RunningState {
 		engine.status = RunningState
 	}
-
-	return nil
 }
 
 func Stop() error {

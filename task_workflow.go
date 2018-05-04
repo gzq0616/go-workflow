@@ -8,16 +8,27 @@ import (
 )
 
 type TaskWorkflow struct {
-	Id          int                    `json:"id" xorm:"pk autoincr"`
-	TaskId      int                    `json:"task_id" xorm:"unique(task_id,name) notnull"`           // task
-	Name        string                 `json:"name" xorm:"unique(task_id,name) varchar(100) notnull"` // 流程名称,最好用字母
-	Alias       string                 `json:"alias"`                                                 // 流程别名或者中文名称
-	Status      int                    `json:"status"`                                                // 流程状态
-	sign        chan string            `json:"-" xorm:"-"`                                            // 信号
-	Result      map[string]bool        `json:"-" xorm:"json"`                                         // 存储节点完成状态,key为节点的名称
-	nodeChannel map[string]chan string `json:"-" xorm:"-"`                                            // 节点注册的channel,key为节点的名称
-	CreatedAt   time.Time              `json:"created_at" xorm:"created"`
-	UpdatedAt   time.Time              `json:"updated_at" xorm:"updated"`
+	Id              int                    `json:"id" xorm:"pk autoincr"`
+	TaskId          int                    `json:"task_id" xorm:"unique(task_id,name) notnull"`           // task
+	Name            string                 `json:"name" xorm:"unique(task_id,name) varchar(100) notnull"` // 流程名称,最好用字母
+	Alias           string                 `json:"alias"`                                                 // 流程别名或者中文名称
+	Status          int                    `json:"status"`                                                // 流程状态
+	sign            chan string            `json:"-" xorm:"-"`                                            // 信号
+	Result          map[string]bool        `json:"-" xorm:"json"`                                         // 存储节点完成状态,key为节点的名称
+	nodeChannel     map[string]chan string `json:"-" xorm:"-"`                                            // 节点注册的channel,key为节点的名称
+	nextNodeChannel chan *TaskNode         `json:"-" xorm:"-"`
+	CreatedAt       time.Time              `json:"created_at" xorm:"created"`
+	UpdatedAt       time.Time              `json:"updated_at" xorm:"updated"`
+}
+
+func getWorkflowByTaskIdAndWorkflowName(taskId int, workflowName string) (*TaskWorkflow, error) {
+	// 根据taskId和workflowName查询TaskWorkflow
+	workflow := &TaskWorkflow{TaskId: taskId, Name: workflowName}
+	_, err := xe.Get(workflow)
+	if err != nil {
+		return nil, err
+	}
+	return workflow, nil
 }
 
 // workflow发布订阅消息
@@ -182,8 +193,7 @@ func NewFlowDiagram(taskId int, tplWorkflowId int) error {
 
 func StartTaskWorkflow(taskId int, workflowName string) error {
 	// 根据taskId和workflowName查询TaskWorkflow
-	workflow := &TaskWorkflow{TaskId: taskId, Name: workflowName}
-	_, err := xe.Get(workflow)
+	workflow, err := getWorkflowByTaskIdAndWorkflowName(taskId, workflowName)
 	if err != nil {
 		return err
 	}
@@ -192,8 +202,7 @@ func StartTaskWorkflow(taskId int, workflowName string) error {
 
 func CloseTaskWorkflow(taskId int, workflowName string) error {
 	// 根据taskId和workflowName查询TaskWorkflow
-	workflow := &TaskWorkflow{TaskId: taskId, Name: workflowName}
-	_, err := xe.Get(workflow)
+	workflow, err := getWorkflowByTaskIdAndWorkflowName(taskId, workflowName)
 	if err != nil {
 		return err
 	}
@@ -233,9 +242,15 @@ func startTaskWorkflow(workflow *TaskWorkflow) error {
 	workflow.sign = make(chan string)
 	//workflow.Result = make(map[string]bool) 可能不需要初始化,数据库查询出来应该已经初始化过了
 	workflow.nodeChannel = make(map[string]chan string)
-	workflow.notify()
+	workflow.nextNodeChannel = make(chan *TaskNode, 10)
 	// 将入口Node加入队列处理
-	//activateNextNode(startTaskNode, q)
+	workflow.nextNodeChannel <- startTaskNode
+
+	// 加入引擎中启动
+	go func() {
+		workflow.notify()
+	}()
+
 	return nil
 }
 
