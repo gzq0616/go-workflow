@@ -1,8 +1,8 @@
 package go_workflow
 
 import (
-	"github.com/go-xorm/xorm"
 	"sync"
+	"github.com/go-xorm/xorm"
 )
 
 var (

@@ -14,3 +14,8 @@ type TaskVariable struct {
 	CreatedAt  time.Time `json:"created_at" xorm:"created"`
 	UpdatedAt  time.Time `json:"updated_at" xorm:"updated"`
 }
+
+func getVariableBy(workflowId int, nodeName, actionName, variableName string) *TaskVariable {
+	// todo: 根据节点名，方法名，变量名取值
+	return nil
+}

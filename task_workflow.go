@@ -1,10 +1,10 @@
 package go_workflow
 
 import (
-	"time"
 	"fmt"
-	"github.com/go-xorm/xorm"
+	"time"
 	"errors"
+	"github.com/go-xorm/xorm"
 )
 
 type TaskWorkflow struct {

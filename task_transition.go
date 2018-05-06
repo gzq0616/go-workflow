@@ -12,3 +12,7 @@ type TaskTransition struct {
 	CreatedAt    time.Time `json:"created_at" xorm:"created"`
 	UpdatedAt    time.Time `json:"updated_at" xorm:"updated"`
 }
+
+func (self *TaskTransition) Verify() error {
+	return verify(self.Condition)
+}

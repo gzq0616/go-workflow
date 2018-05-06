@@ -1,9 +1,10 @@
 package go_workflow
 
 import (
-	"errors"
 	"time"
+	"errors"
 	"strings"
+	"strconv"
 )
 
 type TaskNode struct {
@@ -86,27 +87,6 @@ func (self *TaskNode) run(workflow *TaskWorkflow, q chan<- *TaskNode) error {
 	return nil
 }
 
-// 条件表达式解析
-// ( { NODE_A.ACTION.key1 } > 88 and { NODE_A.ACTION.key1 } != true ) && { NODE_C.ACTION.key1 } == "ok" && { NODE_C.ACTION.key1 != "" }
-// ( {1.3.k} > 55 || {4.5.k} == ok ) &&  2.3.k != 0
-func (self *TaskNode) decide(condition string) bool {
-	// todo:https://studygolang.com/articles/3970
-	// 如果没有设置条件，即无条件执行下一步
-	if condition == "" {
-		return true
-	}
-	return false
-}
-
-func (self *TaskNode) verify(condition string) bool {
-	//for _,s := range condition {
-	//	ch := string(s)
-	//
-	//}
-	// todo:https://studygolang.com/articles/3970
-	return false
-}
-
 // 根据条件激活下一个节点
 func activateNextNode(current *TaskNode, q chan<- *TaskNode) error {
 	// 节点和节点的关系对象
@@ -116,10 +96,15 @@ func activateNextNode(current *TaskNode, q chan<- *TaskNode) error {
 		return err
 	}
 
+	readyNode := make([]*TaskNode, 0)
+
 	for _, relation := range relations {
-		condition := relation.Condition
 		// 判断条件是否满足,如果满足，将下一个节点加入队列
-		if current.decide(condition) {
+		can, err := current.decide(relation)
+		if err != nil {
+			return err
+		}
+		if can {
 			nextNode := &TaskNode{Id: relation.TargetNodeId}
 			has, err := xe.Get(nextNode)
 			if err != nil {
@@ -128,9 +113,121 @@ func activateNextNode(current *TaskNode, q chan<- *TaskNode) error {
 			if !has {
 				return errors.New("not find next node")
 			}
-			q <- nextNode
+			readyNode = append(readyNode, nextNode)
 		}
 	}
 
+	// 没有任何错误，加入队列激活
+	for _, node := range readyNode {
+		q <- node
+	}
+
 	return nil
+}
+
+// 条件表达式解析,表达式必须使用空格分开
+// ( { NODE_A.ACTION.key1 } > 88 && { NODE_A.ACTION.key1 } == true ) && { NODE_C.ACTION.key1 } == ok && { NODE_C.ACTION.key1 == null }
+// ( {1.3.k} > 55 || {4.5.k} == ok ) &&  2.3.k != 0
+func (self *TaskNode) decide(route *TaskTransition) (bool, error) {
+	// 如果没有设置条件，即无条件执行下一步
+	if route.Condition == "" {
+		return true, nil
+	}
+	firstStack := NewStack()
+	secondStack := NewStack()
+	exprStr := strings.Split(route.Condition, " ")
+	for _, s := range exprStr {
+		ch := strings.Trim(s, " ")
+		switch {
+		case ch == "":
+		case ch == "(":
+			secondStack.Push(ch)
+		case ch == ")":
+			// 从第二个栈中取出左括号--> ( bool -> bool再压入第二个栈中
+			last := secondStack.Pop().(bool)
+			secondStack.Pop()
+			recurCalc(secondStack, last)
+		case isOperator(ch, logicOperator): // &&,||
+			secondStack.Push(ch)
+		default:
+			firstStack.Push(ch)
+		}
+
+		if firstStack.Len() == 3 {
+			// calc
+			last := firstStack.Pop().(string)
+			op := firstStack.Pop().(string)
+			pre := firstStack.Pop().(string)
+			ret, err := self.calc(pre, op, last)
+			if err != nil {
+				return false, err
+			}
+			recurCalc(secondStack, ret)
+		}
+	}
+
+	if secondStack.Len() == 1 {
+		return secondStack.Pop().(bool), nil
+	}
+
+	return false, errors.New("无法计算表达式结果")
+}
+
+func (self *TaskNode) calc(pre, op, last string) (bool, error) {
+	reverse := false
+	var variableStr, valueStr string
+	if hasVariableExpr(pre) {
+		variableStr = pre
+		valueStr = last
+	} else if hasVariableExpr(last) {
+		variableStr = last
+		valueStr = pre
+		reverse = true
+	}
+
+	t := strings.Split(variableStr, ".")
+	nodeName := t[0]
+	actionName := t[1]
+	variableName := t[2]
+	variableObj := getVariableBy(self.WorkflowId, nodeName, actionName, variableName)
+	switch variableObj.Type {
+	case "int":
+		actual, err := strconv.ParseInt(variableObj.Value, 10, 64)
+		if err != nil {
+			return false, err
+		}
+		expect, err := strconv.ParseInt(variableObj.Value, 10, 64)
+		if err != nil {
+			return false, err
+		}
+		return compareInt(actual, expect, op, reverse)
+	case "string":
+		actual := variableObj.Value
+		expect := valueStr
+		return compareString(actual, expect, op)
+	case "time":
+		actualTime, err := time.Parse(time.ANSIC, variableObj.Value)
+		if err != nil {
+			return false, err
+		}
+		expectTime, err := time.Parse(time.ANSIC, valueStr)
+		if err != nil {
+			return false, err
+		}
+		actual := actualTime.Unix()
+		expect := expectTime.Unix()
+		return compareInt(actual, expect, op, reverse)
+	case "bool":
+		actual, err := strconv.ParseBool(variableObj.Value)
+		if err != nil {
+			return false, err
+		}
+		expect, err := strconv.ParseBool(valueStr)
+		if err != nil {
+			return false, err
+		}
+		return compareBool(actual, expect, op)
+	default:
+		return false, errors.New("未知类型")
+	}
 }
