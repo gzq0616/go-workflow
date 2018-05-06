@@ -14,5 +14,5 @@ type TaskTransition struct {
 }
 
 func (self *TaskTransition) Verify() error {
-	return verify(self.Condition)
+	return conditionVerify(self.Condition)
 }

@@ -7,8 +7,8 @@ type Stack struct {
 }
 
 func NewStack() *Stack {
-	list := list.New()
-	return &Stack{list}
+	li := list.New()
+	return &Stack{li}
 }
 
 func (stack *Stack) Push(value interface{}) {

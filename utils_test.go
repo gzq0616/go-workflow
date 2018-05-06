@@ -104,7 +104,7 @@ func TestUtilsVerify(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		err := verify(c.condition)
+		err := conditionVerify(c.condition)
 
 		if err != nil {
 			if !c.expected {

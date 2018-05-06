@@ -41,7 +41,7 @@ func isOperator(ch string, list []string) bool {
 
 // {NODE_A.ACTION.key1} > 88 && ( {NODE_A.ACTION.key1} == true && {NODE_C.ACTION.key1} == ok ) && {NODE_C.ACTION.key1} == null
 // 三个为一组,变量使用node+action+name方式表示，以{}包裹，中间不能有空格，而其它元素必须以空格分隔，字符串空值用null表示
-func verify(condition string) error {
+func conditionVerify(condition string) error {
 	exprStr := strings.Split(condition, " ")
 
 	firstStack := NewStack()
@@ -199,4 +199,23 @@ func compareBool(actual, expect bool, op string) (bool, error) {
 
 func hasVariableExpr(str string) bool {
 	return strings.HasPrefix(str, "{")
+}
+
+func PreConditionVerify(workflowId int, condition []string) (bool, error) {
+	/*
+	condition: [node1,node2,node3]
+	依赖节点
+	 */
+	for _, nodeStr := range condition {
+		node := &TaskNode{WorkflowId: workflowId, Name: nodeStr}
+		has, err := xe.Exist(node)
+		if err != nil {
+			return false, err
+		}
+		if !has {
+			return false, errors.New(fmt.Sprintf("not found node %s", nodeStr))
+		}
+	}
+
+	return true, nil
 }

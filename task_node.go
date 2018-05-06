@@ -15,16 +15,28 @@ type TaskNode struct {
 	ActionId     int       `json:"action_id" xorm:"notnull"`                    // 调用的action
 	Status       int       `json:"status" xorm:"notnull"`                       // 状态
 	NodeType     int       `json:"node_type" xorm:"notnull"`                    // Node类型
-	PreCondition string    `json:"pre_condition"`                               // 前置条件
+	PreCondition []string  `json:"pre_condition"`                               // 前置条件
 	X            float64   `json:"x"`                                           // 坐标x
 	Y            float64   `json:"y"`                                           // 坐标y
 	CreatedAt    time.Time `json:"created_at" xorm:"created"`
 	UpdatedAt    time.Time `json:"updated_at" xorm:"updated"`
 }
 
-func (self *TaskNode) preconditionCheck() bool {
-	// todo 判断前置条件是否满足
-	return false
+func (self *TaskNode) preConditionCheck() bool {
+	for _, nodeStr := range self.PreCondition {
+		node := &TaskNode{WorkflowId: self.WorkflowId, Name: nodeStr}
+		has, err := xe.Get(node)
+		if err != nil {
+			return false
+		}
+		if !has {
+			return false
+		}
+		if node.Status <= RunningState {
+			return false
+		}
+	}
+	return true
 }
 
 func (self *TaskNode) run(workflow *TaskWorkflow, q chan<- *TaskNode) error {
@@ -43,13 +55,13 @@ func (self *TaskNode) run(workflow *TaskWorkflow, q chan<- *TaskNode) error {
 
 	// 接收信号，根据前置条件触发执行action
 	// 没有任何前置条件，直接执行action
-	if strings.Trim(self.PreCondition, "") != "" {
+	if len(self.PreCondition) > 0 {
 		// 首先注册监听
 		workflow.register(self.Name)
 		for {
 			<-workflow.nodeChannel[self.Name]
 			// 判断前置条件是否满足
-			if self.preconditionCheck() {
+			if self.preConditionCheck() {
 				// 注销监听
 				workflow.cancel(self.Name)
 				break
