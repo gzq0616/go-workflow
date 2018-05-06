@@ -1,6 +1,8 @@
 package go_workflow
 
-import "time"
+import (
+	"time"
+)
 
 type TaskVariable struct {
 	Id         int       `json:"id" xorm:"pk autoincr"`
@@ -16,6 +18,23 @@ type TaskVariable struct {
 }
 
 func getVariableBy(workflowId int, nodeName, actionName, variableName string) *TaskVariable {
-	// todo: 根据节点名，方法名，变量名取值
+	/*
+	 select * from task_variable tv
+	 left join task_node as tn on tn.id = tv.node_id
+	 left join tpl_action as ta on ta.id = tv.action_id
+	 where tv.workflow_id = workflowId and tn.name = nodeName  and ta.name = actionName and tv.name=variableName
+	 */
+	taskVariable := new(TaskVariable)
+	has, err := xe.Table("task_variable").Alias("tv").
+		Join("LEFT OUTER", "task_node", "tn.id=tv.node_id").Alias("tn").
+		Join("LEFT OUTER", "task_action", "ta.id=tv.action_id").Alias("ta").
+		Where("tv.workflow_id = ? and tn.name = ?  and ta.name = ? and tv.name=?", workflowId, nodeName, actionName, variableName).
+		Get(taskVariable)
+	if err != nil {
+		return nil
+	}
+	if has {
+		return taskVariable
+	}
 	return nil
 }
