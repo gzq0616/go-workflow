@@ -8,7 +8,7 @@ import (
 
 type TplAction struct {
 	Id        int       `json:"id" xorm:"pk autoincr"`
-	Name      string    `json:"name" xorm:"varchar(100) notnull"`
+	Name      string    `json:"name" xorm:"unique varchar(100) notnull "`
 	CreatedAt time.Time `json:"created_at" xorm:"created"`
 	UpdatedAt time.Time `json:"updated_at" xorm:"updated"`
 }

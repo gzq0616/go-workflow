@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"strconv"
+	"fmt"
 )
 
 type TaskNode struct {
@@ -23,6 +24,7 @@ type TaskNode struct {
 }
 
 func (self *TaskNode) preConditionCheck() bool {
+	// 判断前置节点是否已经运行完成
 	for _, nodeStr := range self.PreCondition {
 		node := &TaskNode{WorkflowId: self.WorkflowId, Name: nodeStr}
 		has, err := xe.Get(node)
@@ -71,7 +73,10 @@ func (self *TaskNode) run(workflow *TaskWorkflow, q chan<- *TaskNode) error {
 
 	// 执行action,设置状态为执行中,没有action直接跳转到下一个节点
 	if self.ActionId != 0 {
-		// todo : 调用action
+		err := self.doAction()
+		if err != nil {
+			return err
+		}
 	}
 
 	// 根据条件激活下一个node,即将下一个node加入队列
@@ -242,4 +247,54 @@ func (self *TaskNode) calc(pre, op, last string) (bool, error) {
 	default:
 		return false, errors.New("未知类型")
 	}
+}
+
+func (self *TaskNode) doAction() error {
+	actionId := self.ActionId
+	tplAction := &TplAction{Id: actionId}
+	has, err := xe.Get(tplAction)
+	if err != nil {
+		return err
+	}
+	if !has {
+		return errors.New(fmt.Sprintf("not found this action by ID:%d", actionId))
+	}
+
+	actionInterface, ok := actionMap[tplAction.Name]
+	if !ok {
+		return errors.New("没有注册这个ACTION")
+	}
+	session := xe.NewSession()
+	session.Begin()
+
+	m, runOk := actionInterface.Run()
+	// 运行成功或者失败
+	if runOk != nil {
+		self.Status = FailureState
+	} else {
+		self.Status = SuccessState
+	}
+
+	_, err = session.ID(self.Id).Cols("status").Update(self)
+	if err != nil {
+		session.Rollback()
+		return err
+	}
+
+	for k, v := range m {
+		taskVariable := &TaskVariable{WorkflowId: self.WorkflowId, NodeId: self.Id, ActionId: actionId, Name: k}
+		has, err := session.Get(taskVariable)
+		if err != nil || !has {
+			session.Rollback()
+			return err
+		}
+		taskVariable.Value = v
+		_, err = session.ID(taskVariable.Id).Cols("value").Update(taskVariable)
+		if err != nil {
+			session.Rollback()
+			return err
+		}
+	}
+	session.Commit()
+	return nil
 }

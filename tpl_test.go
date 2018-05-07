@@ -3,7 +3,7 @@ package go_workflow
 import "testing"
 
 func TestAddAction(t *testing.T) {
-	TestInitWorkflow(t)
+	TestInitEngine(t)
 	act := []string{"nginxDown", "nginxUp"}
 	for _, a := range act {
 		_, err := AddAction(a)
@@ -14,7 +14,7 @@ func TestAddAction(t *testing.T) {
 }
 
 func TestAddTplVariable(t *testing.T) {
-	TestInitWorkflow(t)
+	TestInitEngine(t)
 	actionIds := []int{1, 2}
 	for _, actionId := range actionIds {
 		_, err := AddTplVariable("ok", "bool", "是否完成", actionId)
@@ -25,7 +25,7 @@ func TestAddTplVariable(t *testing.T) {
 }
 
 func TestAddTplWorkflow(t *testing.T) {
-	TestInitWorkflow(t)
+	TestInitEngine(t)
 	_, startNode, endNode, err := AddTplWorkflow("nginx_workflow", "NGINX上下线流程")
 	if err != nil {
 		t.Fatalf("add tpl workflow fail %s", err)
@@ -39,7 +39,7 @@ func TestAddTplWorkflow(t *testing.T) {
 }
 
 func TestAddTplNode(t *testing.T) {
-	TestInitWorkflow(t)
+	TestInitEngine(t)
 	ns := []map[string]interface{}{{"name": "nginx_up", "action": 2}, {"name": "nginx_down", "action": 1}}
 	for _, n := range ns {
 		_, err := AddTplNode(n["name"].(string), n["name"].(string), "", 1, n["action"].(int), AutoTrigger, 0, 0)
@@ -50,7 +50,7 @@ func TestAddTplNode(t *testing.T) {
 }
 
 func TestAddTplTransition(t *testing.T) {
-	TestInitWorkflow(t)
+	TestInitEngine(t)
 	cases := []struct {
 		source    int
 		target    int
