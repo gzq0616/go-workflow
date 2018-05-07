@@ -201,6 +201,17 @@ func hasVariableExpr(str string) bool {
 	return strings.HasPrefix(str, "{")
 }
 
+func hasTitle(str string) bool {
+	if str == "" {
+		return false
+	}
+	a := []byte(str)[0]
+	if a >= 97 && a <= 113 {
+		return true
+	}
+	return false
+}
+
 func PreConditionVerify(workflowId int, condition []string) (bool, error) {
 	/*
 	condition: [node1,node2,node3]

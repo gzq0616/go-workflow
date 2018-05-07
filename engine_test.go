@@ -11,7 +11,7 @@ func TestInitEngine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("连接数据库失败！%s", err)
 	}
-	if err := InitEngine(engine); err != nil {
+	if err := EngineInit(engine); err != nil {
 		t.Fatalf("数据库初始化失败！:%s", err)
 	}
 }
