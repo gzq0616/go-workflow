@@ -63,7 +63,7 @@ func TestAddTplTransition(t *testing.T) {
 			target:    4,
 			workflow:  1,
 			condition: "dfdfdfdf",
-			expected:  "1",
+			expected:  "",
 		},
 		{
 			source:    4,
